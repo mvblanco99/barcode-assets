@@ -1,74 +1,100 @@
-import './style.css';
-import { generateCode128SVG } from './barcode.ts';
-import {  exportToPerfectSVG } from './exportToSvg';
+import bwipjs from "bwip-js/browser";
 
-// Generador de códigos secuenciales
-function generateCodes(base: string, count: number): string[] {
-  const codes: string[] = [];
-  for (let i = 1; i <= count; i++) {
-    const suffix = i.toString().padStart(4, '0');
-    codes.push(`${base}${suffix}`);
+// refs al DOM
+const canvas = document.getElementById("canvas");
+if (!(canvas instanceof SVGSVGElement) || !canvas) {
+  throw new Error('Element with id "canvas" is not an SVGSVGElement');
+}
+const exportBtn = document.getElementById("export-btn") as HTMLButtonElement;
+
+// Esta funcion recibe dos argumentos obligatorios y uno opcional: 
+// 1. el codigo del articulo el cual es un entero
+// 2. cantidad de series a generar: es un entero que indica cuantas series de ese articulo se van a imprimir
+// 3. Indica desde que numero se empieza a contar las series, por defecto es 1
+// Ambos argumentos se concatenan para formar el codigo de barras
+// Ejemplo: si el articulo es 1 y la cantidad de series es 2, la funcion devuelve: 00001000001 y 00001000002 , donde los primeros 5 digitos son el articulo y los siguientes 6 son la serie
+function generateBarcode(article: number, series: number, start: number = 1): string[] {
+  const barcodes: string[] = [];
+  const articleStr = String(article).padStart(5, "0");
+  for (let i = start; i < start + series; i++) {
+    const seriesStr = String(i).padStart(6, "0");
+    const barcode = `${articleStr}${seriesStr}`;
+    barcodes.push(barcode);
   }
-  return codes;
+  return barcodes;
 }
 
-async function render() {
-  const app = document.querySelector<HTMLDivElement>('#app')!;
-  app.innerHTML = '';
+function initCanvas() {
+  if (!canvas) {
+    throw new Error("Canvas element not found");
+  }
+  // definimos el tamaño real en mm
+  canvas.setAttribute("width", "1000mm");
+  canvas.setAttribute("height", "1000mm");
+  // canvas.setAttribute("viewBox", "0 0 2000 2000");
+}
 
-  // Crear contenedor de la hoja
-  const page = document.createElement('div');
-  page.classList.add('page');
-  app.appendChild(page);
+async function addBarcodes() {
+  if (!canvas) {
+    throw new Error("Canvas element not found");
+  }
+  const pitchX = 85; // separación horizontal (mm)
+  const pitchY = 35; // separación vertical (mm)
+  let x = 0;
+  let y = 0;
 
-  // Tamaños y márgenes
-  const barcodeWidth = 80;
-  const barcodeHeight = 30;
-  const marginX = 5;
-  const marginY = 5;
-  const spaceX = barcodeWidth + marginX;
-  const spaceY = barcodeHeight + marginY;
+  const barcodeList = generateBarcode(1, 300, 1); // Genera 10 series del articulo 1
 
-  const pageWidth = 1000;
-  const pageHeight = 1000;
-  const cols = Math.floor(pageWidth / spaceX);  // 11
-  const rows = Math.floor(pageHeight / spaceY); // 28
-  const total = cols * rows;                    // 308
+  for (const text of barcodeList) {
+    // opts de Code128
+    const opts: bwipjs.RenderOptions = {
+      bcid: "code128",
+      textxalign: 'center',
+      textyoffset: 3,
+      text,
+      width: 80, // mm
+      height: 30, // mm
+      includetext: true,
+      paddingtop: 10,
+    };
+    // genera SVG string
+    const svgStr = (bwipjs as any).toSVG(opts);
+    const doc = new DOMParser().parseFromString(svgStr, "image/svg+xml");
+    const el = doc.documentElement as unknown as SVGSVGElement;
 
-  // Generar los códigos
-  const codes = generateCodes('00001', total);
+    // lo coloco en la grilla
+    el.setAttribute("x", `${x}mm`);
+    el.setAttribute("y", `${y}mm`);
+    el.setAttribute("width", "85mm");
+    el.setAttribute("height", "35mm");
+    el.setAttribute("style", "background-color: white;");
 
-  for (let i = 0; i < codes.length; i++) {
-    const code = codes[i];
+    canvas.appendChild(el);
 
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-
-    const svgString = await generateCode128SVG(code);
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgString, 'image/svg+xml');
-    const svgElement = doc.documentElement;
-
-    svgElement.setAttribute('width', `${barcodeWidth}mm`);
-    svgElement.setAttribute('height', `${barcodeHeight}mm`);
-
-    svgElement.style.position = 'absolute';
-    svgElement.style.left = `${col * spaceX}mm`;
-    svgElement.style.top = `${row * spaceY}mm`;
-
-    page.appendChild(svgElement);
-
-  const exportBtn = document.createElement('button');
-  exportBtn.textContent = 'Exportar a SVG';
-  exportBtn.style.position = 'fixed';
-  exportBtn.style.top = '10px';
-  exportBtn.style.right = '10px';
-  exportBtn.style.zIndex = '1000';
-  exportBtn.addEventListener('click', exportToPerfectSVG);
-  document.body.appendChild(exportBtn);
-
-    
+    x += pitchX;
+    if (x + 85 > 1000) {
+      x = 0;
+      y += pitchY;
+    }
   }
 }
 
-render();
+function exportSvg() {
+  if (!canvas) {
+    throw new Error("Canvas element not found");
+  }
+  const svgData = new XMLSerializer().serializeToString(canvas);
+  const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "gigantografia.svg";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initCanvas();
+  await addBarcodes();
+  exportBtn.addEventListener("click", exportSvg);
+});
