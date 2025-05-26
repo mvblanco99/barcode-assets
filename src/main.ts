@@ -29,30 +29,45 @@ function generateBarcode(params: {
   return barcodes;
 }
 
-function initCanvas() {
+function initCanvas(numLabels: number) {
   if (!canvas) {
     throw new Error("Canvas element not found");
   }
-  // definimos el tamaño real en mm
-  canvas.setAttribute("width", "1300mm");
-  canvas.setAttribute("height", "2350mm");
-  // canvas.setAttribute("viewBox", "0 0 2000 2000");
+  // Constantes de layout
+  const etiquetasPorFila = 15; // 15 etiquetas en 1300mm de ancho
+  const anchoCanvas = 1300; // mm
+  const altoCanvasPor1000 = 2350; // mm para 1000 etiquetas
+  const altoEtiqueta = altoCanvasPor1000 / Math.ceil(1000 / etiquetasPorFila); // mm por fila
+
+  // Calcular filas necesarias
+  const filas = Math.ceil(numLabels / etiquetasPorFila);
+  const altoCanvas = filas * altoEtiqueta;
+
+  canvas.setAttribute("width", `${anchoCanvas}mm`);
+  canvas.setAttribute("height", `${altoCanvas}mm`);
+  // canvas.setAttribute("viewBox", `0 0 ${anchoCanvas} ${altoCanvas}`);
 }
 
 async function addBarcodes() {
   if (!canvas) {
     throw new Error("Canvas element not found");
   }
+  const etiquetasPorFila = 15;
   const pitchX = 85; // separación horizontal (mm)
   const pitchY = 35; // separación vertical (mm)
-  let x = 0;
-  let y = 0;
 
   const barcodeList = generateBarcode({
     article: 1,
-    series: 1000,
-    start: 1,
+    series: 15,
+    start: 50,
   });
+
+  // Inicializar canvas con altura dinámica
+  initCanvas(barcodeList.length);
+
+  let x = 0;
+  let y = 0;
+  let col = 0;
 
   for (const text of barcodeList) {
     // opts de Code128
@@ -82,14 +97,16 @@ async function addBarcodes() {
     el.setAttribute("y", `${y}mm`);
     el.setAttribute("width", "85mm");
     el.setAttribute("height", "35mm");
-    // el.setAttribute("border", "1px solid black");
 
     canvas.appendChild(el);
 
-    x += pitchX;
-    if (x + 85 > 1300) {
+    col++;
+    if (col >= etiquetasPorFila) {
+      col = 0;
       x = 0;
       y += pitchY;
+    } else {
+      x += pitchX;
     }
   }
 }
@@ -109,7 +126,6 @@ function exportSvg() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  initCanvas();
   await addBarcodes();
   exportBtn.addEventListener("click", exportSvg);
 });
